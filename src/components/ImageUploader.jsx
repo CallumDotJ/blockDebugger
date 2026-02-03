@@ -1,14 +1,13 @@
-import React, { useState } from "react";
 
 function ImageUploader({ onFileSelect }) {
-    const [preview, setPreview] = useState(null);
+    //const [preview, setPreview] = useState(null);
 
 
     const handleFileChange = (event) => {
         const image = event.target.files[0];
         if(image)
         {
-            setPreview(URL.createObjectURL(image));
+            //setPreview(URL.createObjectURL(image));
             onFileSelect(image);
         }
     }
@@ -21,11 +20,7 @@ function ImageUploader({ onFileSelect }) {
                 onChange={handleFileChange}
                 className="border p-2 w-full max-w-md"
             />
-            {preview && (
-                <div className="mt-4">
-                    <img src={preview} alt="Uploaded" className="max-w-full h-auto mx-auto" />
-                </div>
-            )}
+            
         </div>
     );
 }
