@@ -1,4 +1,4 @@
-# This is my final year university project 
+# This is my final year university project frontend repo. 
 
 Block-Based code debugger with AI advancements.
 
