@@ -1,11 +1,8 @@
-# This is my final year university project 
+# This is my final year university project frontend repo. 
 
 Block-Based code debugger with AI advancements.
 
 
-# Block Detection Pipeline - Python Backend
+# Block Detection Pipeline - Backend
 
-1 - YOLOv8 custom model detects blocks in screenshots.
-2 - pytesseract extracts text from each block
-3 - reconstructHierarchy() rebuilds the block structure in JSON format
-4-  Output JSON that represents the screenshot sent
+https://github.com/CallumDotJ/newUniProjectAPI
