@@ -1,3 +1,5 @@
+// Image Uploader UI Component
+
 
 function ImageUploader({ onFileSelect }) {
     //const [preview, setPreview] = useState(null);
@@ -10,6 +12,9 @@ function ImageUploader({ onFileSelect }) {
             //setPreview(URL.createObjectURL(image));
             onFileSelect(image);
         }
+
+        // allow reselection
+        event.target.value = "";
     }
     return (
         <div className="p-4 text-center">

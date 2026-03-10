@@ -1,5 +1,9 @@
 /* COLOUR PALETTES */
 
+// Used for the UI rebuilding within the Debug page.
+
+// Based on colours dated 14/02/2026
+
 export const SCRATCH_COLORS = {
   event: "#FFD500",      // Events (yellow)
   loop: "#FFAB19",       // Control (orange)
@@ -30,6 +34,9 @@ export const EDUBLOCKS_COLORS = {
   other: "#7F8C8D",
 };
 
+// get colours for each block 
+// type = block type e.g. event, loop etc
+// platform = platform specific bloock type.
 export function getBlockColour(type, platform = 'edublocks')
 {
     const palletes = {

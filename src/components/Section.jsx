@@ -1,3 +1,5 @@
+// Simplistic UI Section Div
+
 export default function Section({ title, right, children }) { // right = space for badge
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -1,5 +1,20 @@
 import { getBlockColour } from "../settings/colourPalette";
 
+
+// VISUAL REBUILDER
+
+
+// BLOCKS = [ 
+//   { id: '1', type: 'control_repeat', label: 'repeat 10', depth: 0 },
+// ]
+
+// type: 'event'|'loop'|'condition'|'action'|'variable'|'operator'|'other'
+
+// problemBlockId = '2' // matches specific block to highlight
+
+// platform = 'scratch' | 'blockly' | 'edublocks' - for colour coding
+
+
 export default function BlockPreview({
   blocks = [],
   problemBlockId,
@@ -8,15 +23,15 @@ export default function BlockPreview({
   return (
     <div className="space-y-2">
       {blocks.map((block) => {
-        const isProblem = block.id === problemBlockId;
-        const colour = getBlockColour(block.type, platform);
+        const isProblem = block.id === problemBlockId; // highlight problem block
+        const colour = getBlockColour(block.type, platform); // get colour based on type and platform
 
         return (
           <div
             key={block.id}
             style={{
-              marginLeft: (block.depth ?? 0) * 16,
-              borderLeft: `6px solid ${colour}`,
+              marginLeft: (block.depth ?? 0) * 16, // indent based on depth returned from AI -- 16px per layer
+              borderLeft: `6px solid ${colour}`, 
             }}
             className={`rounded-lg border px-3 py-2 text-sm ${
               isProblem

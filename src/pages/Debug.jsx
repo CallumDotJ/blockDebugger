@@ -1,4 +1,5 @@
 import React from "react";
+//import { jsonrepair } from "jsonrepair";
 
 // Importing components
 import ImageUploader from "../components/ImageUploader";
@@ -8,20 +9,40 @@ import Section from "../components/Section";
 import Skeleton from "../components/Skeleton";
 import BlockPreview from "../components/BlockPreview";
 
+// firestore
+
+import { saveAttempt } from "../services/attemptService";
+import { useAuth } from "../hooks/useAuth";
+
+//////////////////////////
+// Main Debugging Page //
+/////////////////////////
 
 export default function Debug() {
-  const [image, setImage] = React.useState(null); //File object //
+
+  /* STATES */
+  ///////////////////////////////////////////////////////////////
+
+  const [image, setImage] = React.useState(null); //File object 
   const [previewUrl, setPreviewUrl] = React.useState(""); // for image preview
-  const [loading, setLoading] = React.useState(false); //
-  const [apiError, setApiError] = React.useState("");
+  const [loading, setLoading] = React.useState(false); // loading state
+  const [apiError, setApiError] = React.useState(""); // error states
   const [result, setResult] = React.useState(null); // the parsed JSON object
   const [raw, setRaw] = React.useState(""); // in case API returns raw string
-  const [warning, setWarning] = React.useState(""); // model output warning message - 
+  const [warning, setWarning] = React.useState(""); // model output warning message -
+  const [notes, setNotes] = React.useState(""); // notes
+  const [needsReset, setNeedsReset] = React.useState(false); // if true page and states requires reset before allowing analysis 
 
   // sequential hints
   const [hintStep, setHintStep] = React.useState(0); // 0 = none, 1 to 3 reveal levels
-  const maxHintStep = 3;
+  const maxHintStep = 3; // from 1
 
+  // auth
+  const { user } = useAuth();
+
+  ////////////////////////////////////////////////////////////////
+
+  // EFFECT = If image now exists, create the objectURL. 
   React.useEffect(() => {
     if (!image) return;
     const url = URL.createObjectURL(image);
@@ -29,56 +50,114 @@ export default function Debug() {
     return () => URL.revokeObjectURL(url);
   }, [image]);
 
-  const handleImageSelect = (file) => { // perform resets on new image upload, then fetch
+  // Handles file onSelect - sets states reset if new image.
+
+  const handleImageSelect = (file) => {
+
+    // perform resets on new image upload, then fetch
     setImage(file);
     setResult(null);
     setRaw("");
     setWarning("");
     setApiError("");
     setHintStep(0);
-    fetchDebugData(file);
+    setNeedsReset(false);
+
   };
 
+
+  // Hanldes fetch of data onClick from analyse button, enables needsReset.
+  // file = file/image to send
+  const handleFetch = (file) => {
+    fetchDebugData(file);
+    setNeedsReset(true);
+  };
+
+
+  // Main Fetch Function
+  // file = file/image to send
   const fetchDebugData = async (file) => {
+    
+    // Fetch Source URL - Modular for scalability ie VM and AWS etc.
+    const fetchURL = "http://localhost:5000/api/openai/debug";
+
     try {
-      setLoading(true);
+
+      // Temp State setting
+      setLoading(true); 
       setApiError("");
 
-      const formData = new FormData();
-      formData.append("notes", "test"); // replace with textarea input later if needed
-      formData.append("image", file);
+      const formData = new FormData(); 
+      formData.append("notes", notes); // add notes from state.
+      formData.append("image", file); // add file from param.
 
-      const response = await fetch("http://localhost:5000/api/openai/debug", {
+
+      // Fetch async 
+      const response = await fetch(fetchURL, { 
         method: "POST",
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json(); // json format
 
-        // guard against non200 responses
+      // guard against non - 200 responses
 
       if (!response.ok) {
-        throw new Error(data?.message || "Request failed");
+        throw new Error(data?.message || "Request failed"); 
       }
 
-      if (data?.warning) setWarning(data.warning);
+
+      // Failure/Semi-Failure states
+      if (data?.warning) setWarning(data.warning); 
       if (data?.raw) setRaw(data.raw);
 
+      // output var
       const out = data?.output;
 
+
+      // If the model returned an array by mistake, can keep it visible
       if (Array.isArray(out)) { 
-        // if the model returned an array by mistake, you can keep it visible
-        setResult({ summary: "", assumptions: [], identifiedIssues: [], pseudocodeLocation: {}, hints: [], officialAnswer: {}, _array: out }); // wrap in object
+        setResult({
+          summary: "",
+          assumptions: [],
+          identifiedIssues: [],
+          pseudocodeLocation: {},
+          hints: [],
+          officialAnswer: {},
+          _array: out,
+        }); // wrap in object
       } else {
-        setResult(out || null);
+        setResult(out || null); // fallback display whole output
       }
-    } catch (err) {
-      setApiError(err?.message || "Unknown error");
-    } finally {
+
+      // DEBUG LOGGING
+      console.log("Raw API response:", data);
+
+      // LOGIC FOR LEARNING INSIGHTS
+      if (user && out) {
+        await saveAttempt(user.uid, {
+          summary: out.summary || "",
+          confidence: out?.issueLocation?.confidence ?? null,
+          commonMistakesToAvoid:
+            out?.officialAnswer?.commonMistakesToAvoid || [], 
+          identifiedIssues: (out?.identifiedIssues || []).map((i) => ({
+            id: i.id,
+            title: i.title,
+            severity: i.severity,
+          })),
+        });
+      }
+    } 
+    catch (err) { // Facllback fail API req
+      setApiError(err?.message || "Unknown error"); 
+    } 
+    finally {
       setLoading(false);
     }
   };
 
+
+  // State Resets
   const resetAll = () => {
     setImage(null);
     setPreviewUrl("");
@@ -88,45 +167,68 @@ export default function Debug() {
     setRaw("");
     setWarning("");
     setHintStep(0);
+    setNotes("");
+    setNeedsReset(false);
   };
 
-  const hints = Array.isArray(result?.hints) ? result.hints : [];
+  ////////////////
+  /* HINT LOGIC */
+  ////////////////
+
+  const hints = Array.isArray(result?.hints) ? result.hints : []; // stores hints
+
   const hintsSorted = hints
-    .slice()
-    .sort((a, b) => (a?.level ?? 0) - (b?.level ?? 0))
-    .filter((h) => [1, 2, 3].includes(h?.level));
+    .slice() // shallow copy
+    .sort((a, b) => (a?.level ?? 0) - (b?.level ?? 0)) // safe sorting - avoids the crashes before from null param.
+    .filter((h) => [1, 2, 3].includes(h?.level)); // only keeps 1,2,3 level.
 
-  const canRevealNextHint = hintStep < Math.min(maxHintStep, hintsSorted.length || maxHintStep);
-  const canHideHints = hintStep > 0;
+  const canRevealNextHint = // safe revealing of new hint if applicable
+    hintStep < Math.min(maxHintStep, hintsSorted.length || maxHintStep);
 
-  const issueLocation = result?.issueLocation;
+  const canHideHints = hintStep > 0; // only hide if need/required/guard overflow
 
-  const blockPath = Array.isArray(issueLocation?.blockPath)
-    ? issueLocation.blockPath 
+  ///////////////////////////////////
+
+  /////////////////////////
+  /* Returned API Stores */
+  /* Rebuilding UI BLock Store */
+
+  const issueLocation = result?.issueLocation; // stores issueLocation
+
+  const blockPath = Array.isArray(issueLocation?.blockPath) 
+    ? issueLocation.blockPath
     : [];
-  
+
   const previewBlocks = Array.isArray(issueLocation?.blocks)
     ? issueLocation.blocks
     : [];
 
   const problemBlockId = issueLocation?.problemBlockId || "";
 
-  const confidence = 
-    typeof issueLocation?.confidence === "number" ? issueLocation.confidence : null;
+  const confidence =
+    typeof issueLocation?.confidence === "number"
+      ? issueLocation.confidence
+      : null;
 
-  const locationNotes = 
+  const locationNotes =
     typeof issueLocation?.notes === "string" ? issueLocation.notes : "";
 
- 
+  /////////////////////////
+
+  // Function to export all response as json file
   const exportJson = () => {
     if (!result) return;
-    const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+
+    // use blob API object for the data object
+    const blob = new Blob([JSON.stringify(result, null, 2 )], {  // 2 = space for pretty formatting.
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob); // store 
+    const a = document.createElement("a"); // create ref to store
     a.href = url;
-    a.download = "debug-output.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    a.download = "debug-output.json"; // name
+    a.click(); // start download
+    URL.revokeObjectURL(url); // remove from m
   };
 
   return (
@@ -135,9 +237,12 @@ export default function Debug() {
         {/* Header */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Block Debug Tutor</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              Block Debug Tutor
+            </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Upload a screenshot of your Scratch/Blockly blocks and get structured issues, pseudocode, and step-by-step hints.
+              Upload a screenshot of your Scratch/Blockly blocks and get
+              structured issues, pseudocode, and step-by-step hints.
             </p>
           </div>
 
@@ -170,13 +275,22 @@ export default function Debug() {
               <div className="space-y-4">
                 <ImageUploader onFileSelect={handleImageSelect} />
 
-                <p className="text-sm">Hint: If output seems confusing, try uploading a tighter screenshot of the blocks.</p>
+                <p className="text-sm">
+                  Hint: If output seems confusing, try uploading a tighter
+                  screenshot of the blocks.
+                </p>
 
                 {previewUrl ? (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                     <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
-                      <div className="text-sm font-medium text-slate-700">Preview</div>
-                      {image?.name ? <div className="text-xs text-slate-500">{image.name}</div> : null}
+                      <div className="text-sm font-medium text-slate-700">
+                        Preview
+                      </div>
+                      {image?.name ? (
+                        <div className="text-xs text-slate-500">
+                          {image.name}
+                        </div>
+                      ) : null}
                     </div>
                     <img
                       src={previewUrl}
@@ -187,18 +301,56 @@ export default function Debug() {
                 ) : (
                   <div className="rounded-2xl border border-slate-300 bg-white px-4 py-10 text-center">
                     <div className="mx-auto max-w-sm">
-                      <div className="text-sm font-medium text-slate-900">No screenshot uploaded yet</div>
+                      <div className="text-sm font-medium text-slate-900">
+                        No screenshot uploaded yet
+                      </div>
                       <div className="mt-1 text-sm text-slate-600">
-                        Upload a clear screenshot showing the full script area if possible.
+                        Upload a clear screenshot showing the full script area
+                        if possible.
                       </div>
                     </div>
                   </div>
                 )}
+
+                {/* Notes section */}
+                <div className="pt-4">
+                  <label className="block text-sm font-medium text-slate-900 mb-2">
+                    Notes (optional)
+                  </label>
+
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Example: My sprite should stop when it touches the edge but it keeps moving..."
+                    rows={4}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    Add any context about what the program is supposed to do.
+                    This helps the debugger give better hints.
+                  </p>
+
+                  <button
+                    onClick={() => handleFetch(image)}
+                    disabled={!image || loading || needsReset}
+                    className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                  >
+                    {loading ? "Analyzing..." : "Analyze Screenshot"}
+                  </button>
+                </div>
               </div>
             </Section>
 
             {/* Status ----- Shows the warning and warnings from apis*/}
-            <Section title="Status" right={<Badge tone={loading ? "purple" : "gray"}>{loading ? "Working" : "Idle"}</Badge>}>
+            <Section
+              title="Status"
+              right={
+                <Badge tone={loading ? "purple" : "gray"}>
+                  {loading ? "Working" : "Idle"}
+                </Badge>
+              }
+            >
               {loading ? (
                 <Skeleton />
               ) : apiError ? (
@@ -212,7 +364,9 @@ export default function Debug() {
                   <div className="mt-1">{warning}</div>
                   {raw ? (
                     <div className="mt-3">
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-900">Raw</div>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-900">
+                        Raw
+                      </div>
                       <pre className="max-h-48 overflow-auto rounded-lg bg-white p-3 text-xs text-slate-800 border border-amber-200">
                         {raw}
                       </pre>
@@ -229,7 +383,10 @@ export default function Debug() {
 
           {/* Right - results */}
           <div className="lg:col-span-7 space-y-6">
-            <Section title="2) Summary" right={<Badge tone="green">Output</Badge>}>
+            <Section
+              title="2) Summary"
+              right={<Badge tone="green">Output</Badge>}
+            >
               {!result ? (
                 <div className="text-sm text-slate-600">No output yet.</div>
               ) : (
@@ -238,10 +395,13 @@ export default function Debug() {
                     {result?.summary || "No summary returned."}
                   </p>
 
-                  {Array.isArray(result?.assumptions) && result.assumptions.length > 0 ? (
+                  {Array.isArray(result?.assumptions) &&
+                  result.assumptions.length > 0 ? (
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm font-semibold text-slate-900">Assumptions</div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          Assumptions
+                        </div>
                         <Badge tone="gray">{result.assumptions.length}</Badge>
                       </div>
                       <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
@@ -259,7 +419,9 @@ export default function Debug() {
               title="3) Issues Found"
               right={
                 result?.identifiedIssues?.length ? (
-                  <Badge tone="red">{result.identifiedIssues.length} issues</Badge>
+                  <Badge tone="red">
+                    {result.identifiedIssues.length} issues
+                  </Badge>
                 ) : (
                   <Badge tone="gray">None</Badge>
                 )
@@ -267,7 +429,8 @@ export default function Debug() {
             >
               {!result ? (
                 <div className="text-sm text-slate-600">No output yet.</div>
-              ) : Array.isArray(result?.identifiedIssues) && result.identifiedIssues.length > 0 ? (
+              ) : Array.isArray(result?.identifiedIssues) &&
+                result.identifiedIssues.length > 0 ? (
                 <div className="space-y-4">
                   {result.identifiedIssues.map((issue) => (
                     <div
@@ -279,7 +442,9 @@ export default function Debug() {
                           {issue?.title || "Untitled issue"}
                         </div>
                         <SeverityBadge severity={issue?.severity} />
-                        {issue?.id ? <Badge tone="gray">#{issue.id}</Badge> : null}
+                        {issue?.id ? (
+                          <Badge tone="gray">#{issue.id}</Badge>
+                        ) : null}
                       </div>
 
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -315,65 +480,78 @@ export default function Debug() {
                 </div>
               ) : (
                 <div className="text-sm text-slate-600">
-                  No issues were returned by the model. If that seems wrong, try a clearer screenshot.
+                  No issues were returned by the model. If that seems wrong, try
+                  a clearer screenshot.
                 </div>
               )}
             </Section>
 
-            <Section title="4) Where the issue is" right={<Badge tone="red">Visual</Badge>}>
-               {!result ? (
-    <div className="text-sm text-slate-600">No output yet.</div>
-  ) : (
-    <div className="space-y-4">
-      {/* Path chips */}
-      {blockPath.length > 0 ? (
-        <div>
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Block path
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {blockPath.map((p, idx) => (
-              <span
-                key={idx}
-                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700"
-              >
-                {p}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="text-sm text-slate-600">
-          No block path returned. (Try a clearer screenshot.)
-        </div>
-      )}
+            <Section
+              title="4) Where the issue is"
+              right={<Badge tone="red">Visual</Badge>}
+            >
+              {!result ? (
+                <div className="text-sm text-slate-600">No output yet.</div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Path chips */}
+                  {blockPath.length > 0 ? (
+                    <div>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Block path
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {blockPath.map((p, idx) => (
+                          <span
+                            key={idx}
+                            className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700"
+                          >
+                            {p}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-600">
+                      No block path returned. (Try a clearer screenshot.)
+                    </div>
+                  )}
 
-      {/* Confidence */}
-      {confidence !== null ? (
-        <div className="text-xs text-slate-600">
-          Confidence: <span className="font-semibold">{Math.round(confidence * 100)}%</span>
-        </div>
-      ) : null}
+                  {/* Confidence */}
+                  {confidence !== null ? (
+                    <div className="text-xs text-slate-600">
+                      Confidence:{" "}
+                      <span className="font-semibold">
+                        {Math.round(confidence * 100)}% {/* convery to ux friendly output */}
+                      </span>
+                    </div>
+                  ) : null}
 
-      {/* Preview */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-          Block preview
-        </div>
+                  {/* Preview */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Block preview
+                    </div>
 
-        <BlockPreview blocks={previewBlocks} problemBlockId={problemBlockId} />
+                    <BlockPreview
+                      blocks={previewBlocks}
+                      problemBlockId={problemBlockId}
+                    />
 
-        {locationNotes ? (
-          <div className="mt-3 text-xs text-slate-600">
-            Note: {locationNotes}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  )}
+                    {locationNotes ? (
+                      <div className="mt-3 text-xs text-slate-600">
+                        Note: {locationNotes}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </Section>
 
-            <Section title="Pseudocode Breakdown" right={<Badge tone="purple">Explain</Badge>}>
+            <Section
+              title="Pseudocode Breakdown"
+              right={<Badge tone="purple">Explain</Badge>}
+            >
               {!result ? (
                 <div className="text-sm text-slate-600">No output yet.</div>
               ) : (
@@ -383,7 +561,8 @@ export default function Debug() {
                       Current behavior
                     </div>
                     <pre className="whitespace-pre-wrap text-sm text-slate-800">
-                      {result?.pseudocodeLocation?.currentBehaviorPseudocode || "—"}
+                      {result?.pseudocodeLocation?.currentBehaviorPseudocode ||
+                        "-"}
                     </pre>
                   </div>
 
@@ -392,7 +571,7 @@ export default function Debug() {
                       Where it goes wrong
                     </div>
                     <pre className="whitespace-pre-wrap text-sm text-slate-800">
-                      {result?.pseudocodeLocation?.whereItGoesWrong || "—"}
+                      {result?.pseudocodeLocation?.whereItGoesWrong || "-"}
                     </pre>
                   </div>
 
@@ -401,7 +580,8 @@ export default function Debug() {
                       Corrected logic
                     </div>
                     <pre className="whitespace-pre-wrap text-sm text-slate-800">
-                      {result?.pseudocodeLocation?.correctedLogicPseudocode || "—"}
+                      {result?.pseudocodeLocation?.correctedLogicPseudocode ||
+                        "-"}
                     </pre>
                   </div>
                 </div>
@@ -415,7 +595,8 @@ export default function Debug() {
                 <div className="flex items-center gap-2">
                   <Badge tone="blue">Sequential</Badge>
                   <Badge tone="gray">
-                    Step {hintStep}/{Math.min(maxHintStep, hintsSorted.length || maxHintStep)}
+                    Step {hintStep}/
+                    {Math.min(maxHintStep, hintsSorted.length || maxHintStep)}
                   </Badge>
                 </div>
               }
@@ -427,7 +608,9 @@ export default function Debug() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       disabled={!canRevealNextHint}
-                      onClick={() => setHintStep((s) => Math.min(s + 1, maxHintStep))}
+                      onClick={() =>
+                        setHintStep((s) => Math.min(s + 1, maxHintStep))
+                      }
                       className={`rounded-xl px-4 py-2 text-sm font-medium shadow-sm ${
                         canRevealNextHint
                           ? "bg-slate-900 text-white hover:bg-slate-800"
@@ -450,14 +633,18 @@ export default function Debug() {
                     </button>
 
                     <div className="text-sm text-slate-600">
-                      Reveal hints one-by-one. Try to fix before revealing the next.
+                      Reveal hints one-by-one. Try to fix before revealing the
+                      next.
                     </div>
                   </div>
-
+                  
+                  {/* HINT SYSTEM UI */}
                   <div className="space-y-3">
-                    {[1, 2, 3].map((level) => {
-                      const hintObj = hintsSorted.find((h) => h.level === level);
-                      const visible = hintStep >= level;
+                    {[1, 2, 3].map((level) => { // map first 3 of tht hints
+                      const hintObj = hintsSorted.find(
+                        (h) => h.level === level, // use inline to iterate 
+                      );
+                      const visible = hintStep >= level; 
                       return (
                         <div
                           key={level}
@@ -469,8 +656,14 @@ export default function Debug() {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
-                              <Badge tone={visible ? "blue" : "gray"}>Hint {level}</Badge>
-                              {!visible ? <Badge tone="gray">Locked</Badge> : <Badge tone="green">Revealed</Badge>}
+                              <Badge tone={visible ? "blue" : "gray"}>
+                                Hint {level}
+                              </Badge>
+                              {!visible ? (
+                                <Badge tone="gray">Locked</Badge>
+                              ) : (
+                                <Badge tone="green">Revealed</Badge>
+                              )}
                             </div>
                           </div>
 
@@ -491,27 +684,24 @@ export default function Debug() {
               )}
             </Section>
 
-
             {/* Official Answer Section */}
-            <Section title="Official Answer" right={<Badge tone="green">Solution</Badge>}>
+            <Section
+              title="Official Answer"
+              right={<Badge tone="green">Solution</Badge>}
+            >
               {!result ? (
                 <div className="text-sm text-slate-600">No output yet.</div>
-              ) 
-               : hintStep < maxHintStep ?
-               (
+              ) : hintStep < maxHintStep ? (
                 <div className="text-sm text-slate-600">
                   Reveal all hints to unlock the official answer.
                 </div>
-               )
-                : 
-               (
+              ) : (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-2 flex items-center justify-between">
                       <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                         Final pseudocode
                       </div>
-                     
                     </div>
                     <pre className="whitespace-pre-wrap text-sm text-slate-800">
                       {result?.officialAnswer?.finalPseudocode || "—"}
@@ -539,11 +729,15 @@ export default function Debug() {
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Common mistakes to avoid
                     </div>
-                    {Array.isArray(result?.officialAnswer?.commonMistakesToAvoid) ? (
+                    {Array.isArray(
+                      result?.officialAnswer?.commonMistakesToAvoid,
+                    ) ? (
                       <ul className="list-disc pl-5 text-sm text-slate-800 space-y-1">
-                        {result.officialAnswer.commonMistakesToAvoid.map((m, idx) => (
-                          <li key={idx}>{m}</li>
-                        ))}
+                        {result.officialAnswer.commonMistakesToAvoid.map(
+                          (m, idx) => (
+                            <li key={idx}>{m}</li>
+                          ),
+                        )}
                       </ul>
                     ) : (
                       <div className="text-sm text-slate-800">
@@ -552,7 +746,7 @@ export default function Debug() {
                     )}
                   </div>
                 </div>
-              ) }
+              )}
             </Section>
           </div>
         </div>

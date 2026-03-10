@@ -1,5 +1,8 @@
 import Badge from "./Badge";
 
+
+// Severity Component Based for UI from AI
+
 export default function SeverityBadge({ severity }) { // "High", "Medium", "Low"
   const s = (severity || "").toLowerCase();
 

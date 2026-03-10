@@ -1,3 +1,5 @@
+// Badge UI component
+
 export default function Badge({ children, tone = "gray" }) {  // tones: gray, green, yellow, red, blue, purple 
   const tones = {
     gray: "bg-slate-100 text-slate-700 ring-slate-200",
