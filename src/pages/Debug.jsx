@@ -549,7 +549,7 @@ export default function Debug() {
             </Section>
 
             <Section
-              title="Pseudocode Breakdown"
+              title="4) Pseudocode Breakdown"
               right={<Badge tone="purple">Explain</Badge>}
             >
               {!result ? (
@@ -590,7 +590,7 @@ export default function Debug() {
 
             {/* Sequential Hint System */}
             <Section
-              title="Hint System"
+              title="5) Hint System"
               right={
                 <div className="flex items-center gap-2">
                   <Badge tone="blue">Sequential</Badge>
@@ -686,7 +686,7 @@ export default function Debug() {
 
             {/* Official Answer Section */}
             <Section
-              title="Official Answer"
+              title="6) Official Answer"
               right={<Badge tone="green">Solution</Badge>}
             >
               {!result ? (
