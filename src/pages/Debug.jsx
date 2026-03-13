@@ -19,11 +19,10 @@ import { useAuth } from "../hooks/useAuth";
 /////////////////////////
 
 export default function Debug() {
-
   /* STATES */
   ///////////////////////////////////////////////////////////////
 
-  const [image, setImage] = React.useState(null); //File object 
+  const [image, setImage] = React.useState(null); //File object
   const [previewUrl, setPreviewUrl] = React.useState(""); // for image preview
   const [loading, setLoading] = React.useState(false); // loading state
   const [apiError, setApiError] = React.useState(""); // error states
@@ -31,18 +30,23 @@ export default function Debug() {
   const [raw, setRaw] = React.useState(""); // in case API returns raw string
   const [warning, setWarning] = React.useState(""); // model output warning message -
   const [notes, setNotes] = React.useState(""); // notes
-  const [needsReset, setNeedsReset] = React.useState(false); // if true page and states requires reset before allowing analysis 
+  const [needsReset, setNeedsReset] = React.useState(false); // if true page and states requires reset before allowing analysis
+  const [platform, setPlatform] = React.useState("edublocks"); // block platform
+  // platform = 'scratch' | 'blockly' | 'edublocks' - for colour coding
 
   // sequential hints
   const [hintStep, setHintStep] = React.useState(0); // 0 = none, 1 to 3 reveal levels
   const maxHintStep = 3; // from 1
+
+  // platform types
+  const platformTypes = ["Edublocks", "Scratch", "Blockly"];
 
   // auth
   const { user } = useAuth();
 
   ////////////////////////////////////////////////////////////////
 
-  // EFFECT = If image now exists, create the objectURL. 
+  // EFFECT = If image now exists, create the objectURL.
   React.useEffect(() => {
     if (!image) return;
     const url = URL.createObjectURL(image);
@@ -53,7 +57,6 @@ export default function Debug() {
   // Handles file onSelect - sets states reset if new image.
 
   const handleImageSelect = (file) => {
-
     // perform resets on new image upload, then fetch
     setImage(file);
     setResult(null);
@@ -62,10 +65,13 @@ export default function Debug() {
     setApiError("");
     setHintStep(0);
     setNeedsReset(false);
-
   };
 
-
+  // platform select handler
+  const handlePlatformSelect = (e) => {
+    const selectedPlatform = e.target.value.toLowerCase();
+    setPlatform(selectedPlatform);
+  };
   // Hanldes fetch of data onClick from analyse button, enables needsReset.
   // file = file/image to send
   const handleFetch = (file) => {
@@ -73,27 +79,23 @@ export default function Debug() {
     setNeedsReset(true);
   };
 
-
   // Main Fetch Function
   // file = file/image to send
   const fetchDebugData = async (file) => {
-    
     // Fetch Source URL - Modular for scalability ie VM and AWS etc.
     const fetchURL = "http://localhost:5000/api/openai/debug";
 
     try {
-
       // Temp State setting
-      setLoading(true); 
+      setLoading(true);
       setApiError("");
 
-      const formData = new FormData(); 
+      const formData = new FormData();
       formData.append("notes", notes); // add notes from state.
       formData.append("image", file); // add file from param.
 
-
-      // Fetch async 
-      const response = await fetch(fetchURL, { 
+      // Fetch async
+      const response = await fetch(fetchURL, {
         method: "POST",
         body: formData,
       });
@@ -103,20 +105,18 @@ export default function Debug() {
       // guard against non - 200 responses
 
       if (!response.ok) {
-        throw new Error(data?.message || "Request failed"); 
+        throw new Error(data?.message || "Request failed");
       }
 
-
       // Failure/Semi-Failure states
-      if (data?.warning) setWarning(data.warning); 
+      if (data?.warning) setWarning(data.warning);
       if (data?.raw) setRaw(data.raw);
 
       // output var
       const out = data?.output;
 
-
       // If the model returned an array by mistake, can keep it visible
-      if (Array.isArray(out)) { 
+      if (Array.isArray(out)) {
         setResult({
           summary: "",
           assumptions: [],
@@ -139,7 +139,7 @@ export default function Debug() {
           summary: out.summary || "",
           confidence: out?.issueLocation?.confidence ?? null,
           commonMistakesToAvoid:
-            out?.officialAnswer?.commonMistakesToAvoid || [], 
+            out?.officialAnswer?.commonMistakesToAvoid || [],
           identifiedIssues: (out?.identifiedIssues || []).map((i) => ({
             id: i.id,
             title: i.title,
@@ -147,15 +147,13 @@ export default function Debug() {
           })),
         });
       }
-    } 
-    catch (err) { // Facllback fail API req
-      setApiError(err?.message || "Unknown error"); 
-    } 
-    finally {
+    } catch (err) {
+      // Facllback fail API req
+      setApiError(err?.message || "Unknown error");
+    } finally {
       setLoading(false);
     }
   };
-
 
   // State Resets
   const resetAll = () => {
@@ -195,7 +193,7 @@ export default function Debug() {
 
   const issueLocation = result?.issueLocation; // stores issueLocation
 
-  const blockPath = Array.isArray(issueLocation?.blockPath) 
+  const blockPath = Array.isArray(issueLocation?.blockPath)
     ? issueLocation.blockPath
     : [];
 
@@ -220,10 +218,11 @@ export default function Debug() {
     if (!result) return;
 
     // use blob API object for the data object
-    const blob = new Blob([JSON.stringify(result, null, 2 )], {  // 2 = space for pretty formatting.
+    const blob = new Blob([JSON.stringify(result, null, 2)], {
+      // 2 = space for pretty formatting.
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob); // store 
+    const url = URL.createObjectURL(blob); // store
     const a = document.createElement("a"); // create ref to store
     a.href = url;
     a.download = "debug-output.json"; // name
@@ -255,6 +254,17 @@ export default function Debug() {
                 Export JSON
               </button>
             )}
+            <select
+              value={platform}
+              onChange={handlePlatformSelect}
+              className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+            >
+              {platformTypes.map((type) => (
+                <option key={type} value={type.toLowerCase()}>
+                  {type}
+                </option>
+              ))}
+            </select>
             <button
               onClick={resetAll}
               className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
@@ -522,7 +532,8 @@ export default function Debug() {
                     <div className="text-xs text-slate-600">
                       Confidence:{" "}
                       <span className="font-semibold">
-                        {Math.round(confidence * 100)}% {/* convery to ux friendly output */}
+                        {Math.round(confidence * 100)}%{" "}
+                        {/* convery to ux friendly output */}
                       </span>
                     </div>
                   ) : null}
@@ -536,6 +547,7 @@ export default function Debug() {
                     <BlockPreview
                       blocks={previewBlocks}
                       problemBlockId={problemBlockId}
+                      platform={platform}
                     />
 
                     {locationNotes ? (
@@ -637,14 +649,15 @@ export default function Debug() {
                       next.
                     </div>
                   </div>
-                  
+
                   {/* HINT SYSTEM UI */}
                   <div className="space-y-3">
-                    {[1, 2, 3].map((level) => { // map first 3 of tht hints
+                    {[1, 2, 3].map((level) => {
+                      // map first 3 of tht hints
                       const hintObj = hintsSorted.find(
-                        (h) => h.level === level, // use inline to iterate 
+                        (h) => h.level === level, // use inline to iterate
                       );
-                      const visible = hintStep >= level; 
+                      const visible = hintStep >= level;
                       return (
                         <div
                           key={level}
